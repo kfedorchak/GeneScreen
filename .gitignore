@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+backend/app/static/
+
+# Data caches (large raw DepMap downloads — never commit)
+backend/scripts/.depmap_cache/
+*.tmp
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local env
+.env

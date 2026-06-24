@@ -1,0 +1,8 @@
+**/node_modules
+**/.venv
+backend/scripts/.depmap_cache
+backend/app/static
+**/__pycache__
+**/.pytest_cache
+*.pyc
+.git

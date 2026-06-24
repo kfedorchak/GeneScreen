@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: genescreen
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/dataset
+    envVars:
+      - key: PORT
+        value: "8000"
