@@ -155,6 +155,17 @@ Single-process (serve the built app from FastAPI): `cd frontend && npm run build
 then open the uvicorn server's root. Deploy is one Docker service (`Dockerfile`,
 `render.yaml`).
 
+### Configuration (env vars)
+
+| var | default | purpose |
+|---|---|---|
+| `GENESCREEN_ALLOWED_ORIGINS` | "" (same-origin only) | comma-separated CORS allowlist |
+| `GENESCREEN_RATE_MAX` / `_WINDOW` | 40 / 60 | per-IP request cap per window (seconds) on screen/dossier |
+| `GENESCREEN_ALLOW_LIVE_OT` | 0 (off) | allow live Open Targets calls on cache miss; the bundled cache covers the whole demo subset, so leave off in production |
+
+For local dev with live Open Targets (e.g. testing uploads), set
+`GENESCREEN_ALLOW_LIVE_OT=1`.
+
 ### Rebuild the real demo subset (optional; subset is committed)
 
 ```bash
