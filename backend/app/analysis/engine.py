@@ -103,16 +103,27 @@ def _run_continuous(
     denom = np.sqrt(np.clip((1 - r_xz**2) * (1 - r_yz[None, :] ** 2), 1e-12, None))
     rho_partial = np.clip((rho - r_xz * r_yz[None, :]) / denom, -0.9999999, 0.9999999)
 
-    def _two_sided_p(r, df):
+    # Orient the effect so that NEGATIVE always means "the hypothesised copy-number
+    # change is associated with a stronger dependency". For amplification that's a
+    # negative CN-vs-effect correlation already; for deletion (loss induces the
+    # dependency) the raw correlation is positive, so we flip its sign. This keeps
+    # one sign convention across modes/directions and makes the test one-sided.
+    flip = -1.0 if params.direction == Direction.deletion else 1.0
+    rho = rho * flip
+    rho_partial = rho_partial * flip
+
+    def _p(r, df):
         with np.errstate(divide="ignore", invalid="ignore"):
             t = r * np.sqrt(df / (1.0 - r**2))
-        return 2.0 * stats.t.sf(np.abs(t), df=df)
+        if params.direction == Direction.both:
+            return 2.0 * stats.t.sf(np.abs(t), df=df)          # two-sided
+        return stats.t.cdf(t, df=df)                            # one-sided, H1: effect < 0
 
-    p = _two_sided_p(rho, n - 2)
-    p_partial = _two_sided_p(rho_partial, n - 3)
+    p = _p(rho, n - 2)
+    p_partial = _p(rho_partial, n - 3)
 
-    # OLS slope on the original (non-ranked) scale, for interpretability:
-    # slope_xy = cov(x,y)/var(x), computed per driver across all dependencies.
+    # OLS slope on the original (non-ranked) scale, for interpretability;
+    # flipped to match the effect-size sign convention above.
     Ac = A.fillna(A.mean()).to_numpy(dtype=float)
     Bc = B.fillna(B.mean()).to_numpy(dtype=float)
     Acen = Ac - Ac.mean(0, keepdims=True)
@@ -120,7 +131,7 @@ def _run_continuous(
     cov = Acen.T @ Bcen / (n - 1)                # a x b
     var_a = (Acen**2).sum(0) / (n - 1)           # a
     var_a[var_a == 0] = np.nan
-    slope = cov / var_a[:, None]
+    slope = cov / var_a[:, None] * flip
 
     # For trans pairs whose dependency CN is available, `control` swaps in the
     # partial correlation (and its p); cis pairs and unmeasurable pairs keep raw.
@@ -193,8 +204,11 @@ def _run_binary(A: pd.DataFrame, B: pd.DataFrame, params: ScreenParams) -> pd.Da
         block_in = Bv[grp]      # altered lines x b_genes
         block_out = Bv[~grp]    # other lines x b_genes
         # Mann-Whitney per dependency column; nan_policy omits missing gene effects.
+        # Directional hypothesis: the altered group has LOWER gene effect (more
+        # dependent) -> one-sided "less"; "both" stays two-sided.
+        alt = "two-sided" if params.direction == Direction.both else "less"
         U, p = stats.mannwhitneyu(
-            block_in, block_out, axis=0, alternative="two-sided", nan_policy="omit"
+            block_in, block_out, axis=0, alternative=alt, nan_policy="omit"
         )
         # Cliff's delta = 2*U/(n1*n0) - 1 with U for the altered group. scipy
         # orients U so this is already negative when the altered group has lower
@@ -326,18 +340,25 @@ def run_screen(
     if res.empty:
         return _empty_result()
 
-    # BH-FDR across all surviving tests.
+    # Collapse co-amplified drivers into amplicon modules (one row per module x
+    # dependency) BEFORE multiple-testing correction. Co-amplified drivers are
+    # collinear in CN, so each module's members are ~the same test; correcting
+    # over all of them inflates the family size and makes BH overly conservative.
+    # Collapsing first means the FDR reflects the number of *distinct* hypotheses.
+    # (Within a high-correlation module the representative's min-p selection bias
+    # is second-order; same-gene cis rows are preferred so they can only raise,
+    # never lower, the representative's p — a safe, conservative choice.)
+    if mods is not None and not res.empty:
+        res = amplicon.collapse(res, mods)
+        if res.empty:
+            return _empty_result()
+
+    # BH-FDR across the (now distinct) surviving tests.
     res = res.reset_index(drop=True)
     _, q, _, _ = multipletests(res["p_value"].values, method="fdr_bh")
     res["q_value"] = q
 
     res = res[res["q_value"] <= params.fdr_threshold]
-
-    # Collapse co-amplified drivers into amplicon modules (one row per module x
-    # dependency), reusing the modules clustered above.
-    if mods is not None and not res.empty:
-        res = amplicon.collapse(res, mods)
-
     res = res.sort_values(["q_value", "effect_size"], ascending=[True, True])
     res = res.head(params.max_results).reset_index(drop=True)
     return res

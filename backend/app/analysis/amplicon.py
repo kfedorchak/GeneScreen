@@ -98,10 +98,11 @@ def collapse(res: pd.DataFrame, mods: AmpliconModules) -> pd.DataFrame:
     res["module_size"] = res["module_id"].map(lambda m: mods.size(m))
 
     res["_abseff"] = res["effect_size"].abs()
-    # Representative = strongest evidence (smallest q, largest |effect|), but
+    # Representative = strongest evidence (smallest p, largest |effect|), but
     # prefer the true same-gene cis row when the group has one, so a cis-amplicon
-    # group shows e.g. CCND1->CCND1 rather than a co-amplified passenger.
-    sort_cols, ascending = ["q_value", "_abseff"], [True, False]
+    # group shows e.g. CCND1->CCND1 rather than a co-amplified passenger. Ordered
+    # by p (not q) because this runs BEFORE FDR; p and q are rank-equivalent.
+    sort_cols, ascending = ["p_value", "_abseff"], [True, False]
     if "same_gene" in res.columns:
         res["_notsame"] = ~res["same_gene"].astype(bool)
         sort_cols, ascending = ["_notsame", *sort_cols], [True, *ascending]

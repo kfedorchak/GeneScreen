@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from app.analysis import engine, scoring
+from app.analysis import engine, filters, scoring
 from app.data import synthesize
 from app.schemas import CoampHandling, Direction, Mode, Relationship, ScreenParams
 
@@ -165,6 +165,51 @@ def test_relationship_stays_gene_level_without_collapse(syn):
     )
     # the passenger is a distinct gene from ERBB2 -> still trans here
     assert syn.coamp_passengers[0] in _pairs(res)
+
+
+def test_one_sided_p_is_half_two_sided(syn):
+    """Directional (one-sided) p equals exactly half the two-sided p for a hit in
+    the hypothesised direction (fix #2)."""
+    A, B = filters.align(syn.A, syn.B)
+    one = engine._run_continuous(A, B, ScreenParams(direction=Direction.amplification), None)
+    two = engine._run_continuous(A, B, ScreenParams(direction=Direction.both), None)
+    sel = lambda d: d[(d.driver_gene == "ERBB2") & (d.dependency_gene == "ERBB2")].iloc[0]
+    p1, p2 = sel(one).p_value, sel(two).p_value
+    assert sel(one).effect_size < 0  # in the hypothesised (amplification) direction
+    assert p1 == pytest.approx(p2 / 2, rel=1e-6)
+
+
+def test_deletion_direction_recovers_loss_dependency(syn):
+    """A deletion-induced dependency surfaces only under direction=deletion, with
+    the oriented (negative) effect-size convention (fix #2 / sign fix)."""
+    res = engine.run_screen(
+        syn.A, syn.B, ScreenParams(mode=Mode.continuous, direction=Direction.deletion),
+        syn.model_meta, syn.common_essentials,
+    )
+    assert syn.true_deletion[0] in _pairs(res)
+    row = res[(res.driver_gene == "DELDR") & (res.dependency_gene == "DELDEP")].iloc[0]
+    assert row.effect_size < 0  # oriented: negative = loss induces dependency
+
+
+def test_amplification_excludes_deletion_signal(syn):
+    """The deletion signal must NOT appear in an amplification-direction screen."""
+    res = engine.run_screen(
+        syn.A, syn.B, ScreenParams(mode=Mode.continuous, direction=Direction.amplification),
+        syn.model_meta, syn.common_essentials,
+    )
+    assert syn.true_deletion[0] not in _pairs(res)
+
+
+def test_collapse_before_fdr_recovers_planted_hits(syn):
+    """With amplicon collapse on (FDR over distinct modules), planted hits still
+    pass (fix #1)."""
+    res = engine.run_screen(
+        syn.A, syn.B, ScreenParams(collapse_amplicons=True),
+        syn.model_meta, syn.common_essentials,
+    )
+    found = _pairs(res)
+    assert ("CCNE1", "CDK2") in found
+    assert (res["q_value"] <= 0.1).all()
 
 
 def test_scoring_runs_and_ranks(syn):

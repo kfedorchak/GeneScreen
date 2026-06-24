@@ -33,6 +33,7 @@ class SyntheticData:
     true_trans: list[tuple[str, str]]
     confound_pairs: list[tuple[str, str]] = field(default_factory=list)
     coamp_passengers: list[tuple[str, str]] = field(default_factory=list)
+    true_deletion: list[tuple[str, str]] = field(default_factory=list)
 
 
 def _entrez(symbol: str, i: int) -> str:
@@ -93,6 +94,21 @@ def generate(n_lines: int = 400, n_noise: int = 250, seed: int = 7) -> Synthetic
     B_cols[_entrez("CCNE1", 50)] = ge_baseline()     # CCNE1 itself not essential
     true_trans = [("CCNE1", "CDK2")]
 
+    # ---- planted DELETION-induced dependency: DELDR loss -> DELDEP dep ---- #
+    # Low copy number (deletion) of DELDR makes DELDEP essential. The raw CN-vs-
+    # effect correlation is POSITIVE (both drop together); only a deletion-
+    # direction screen should surface it (and with a negative oriented effect).
+    deleted = rng.random(n_lines) < 0.15
+    dcn = cn_baseline()
+    dcn[deleted] = rng.normal(0.4, 0.10, deleted.sum())   # log2(CN+1) ~0.4 == loss
+    A_cols[_entrez("DELDR", 70)] = dcn
+    A_cols[_entrez("DELDEP", 71)] = cn_baseline()
+    deldep = ge_baseline()
+    deldep[deleted] = rng.normal(-1.0, 0.20, deleted.sum())
+    B_cols[_entrez("DELDEP", 71)] = deldep
+    B_cols[_entrez("DELDR", 70)] = ge_baseline()
+    true_deletion = [("DELDR", "DELDEP")]
+
     # ---- lineage CONFOUND (no causal CN->dep link) ----------------------- #
     is_breast = lineages == "Breast"
     foo_cn = cn_baseline()
@@ -131,4 +147,5 @@ def generate(n_lines: int = 400, n_noise: int = 250, seed: int = 7) -> Synthetic
         true_trans=true_trans,
         confound_pairs=confound_pairs,
         coamp_passengers=coamp_passengers,
+        true_deletion=true_deletion,
     )

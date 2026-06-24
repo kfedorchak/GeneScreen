@@ -29,8 +29,14 @@ For every driver(A) × dependency(B) pair:
 - **Binary mode** — split lines amplified/not by a CN threshold, Mann-Whitney U
   on each dependency, effect size = Cliff's delta.
 
-A *negative* effect size means more copies track with stronger dependency.
-Multiple testing is controlled with Benjamini-Hochberg across all tested pairs.
+Tests are **one-sided** in the hypothesised direction (amplification *or*
+deletion induces dependency); effect size is oriented so a *negative* value
+always means "the chosen copy-number change tracks with a stronger dependency"
+(`both` uses a two-sided test and keeps either sign). Multiple testing is
+controlled with Benjamini-Hochberg. When amplicon collapsing is on, **BH is
+applied after** collapsing co-amplified drivers to one test per module ×
+dependency — so the correction reflects the number of *distinct* hypotheses
+rather than redundant collinear copies (which would make BH overly conservative).
 Common-essential (pan-lethal) genes are filtered so hits are *selective*
 dependencies, not ribosome/proteasome genes.
 
